@@ -3,6 +3,7 @@
 */
 const sol = new SolidHandler()      // from solid-ide-solidHandler.js
 const fc = SolidFileClient;         // from solid-file-client.bundle.js
+const auth = SolidAuthClient;         // from solid-file-client.bundle.js
 
 var init = function(){
     app.getStoredPrefs()
@@ -127,9 +128,9 @@ var app = new Vue({
                    this.logState = "logout"
                    sol.homeUrl = this.homeUrl
                    fc.logout().then( ()=> {
-                       fc.popupLogin().then(function(){
-                           view.refresh()
-                       })
+                     auth.popupLogin({popupUri: 'popup.html'}).then(() => fc.checkSession()).then((sess) => {
+                       view.refresh(sess.webId)
+                     })
                    })
                }
             },
@@ -163,7 +164,7 @@ var app = new Vue({
             var state = localStorage.getItem("solState");
             if(!state) {
                 sol.homeUrl = this.homeUrl =
-                    "https://solside.solid.community/public/samples/"
+                    "https://solside.solid.community/public/"
                 sol.idp = this.idp =  "https://solid.community"
                 return;
             }
