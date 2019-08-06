@@ -79,6 +79,7 @@ span.right-justify {
 }
 .flex-item { flex: 0 1 auto; }
 .flex-container { display:flex; height:100%;}
+#editorContainer{ flex: 1; }
 #editor, #dataBrowser, iframe,.formArea { position: absolute; }
 iframe {  border:none; }
 

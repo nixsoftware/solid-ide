@@ -3,19 +3,15 @@
 */
 var SolidIdeEditor = function(elementID) {
     this.name="zeditor"
-    this.ed = ace.edit(elementID,{
-        maxLines:24,
-        minLines:14,
-    });
+    this.ed = ace.edit(elementID,{});
     this.getContents = function (){
         return this.ed.getValue()
     };
     this.setContents = function (contents){
         this.ed.setValue(contents)
     };
-    this.setSize = function (lines){
-        this.ed.setOption("maxLines",lines)
-        this.ed.setOption("minLines",lines)
+    this.resize = function (){
+      this.ed.resize();
     };
     this.setReadOnly = function (trueOrFalse){
         this.ed.setReadOnly(trueOrFalse)

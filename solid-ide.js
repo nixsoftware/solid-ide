@@ -252,11 +252,7 @@ var app = new Vue({
                 var theme = app.editTheme || "dark theme"
                 this.setEditKeys(keys);
                 this.setEditTheme(theme);
-                var size=14; //1260x720 iH = 581px; 1366x768 = 618px
-                if(window.innerHeight>600) size = 18
-                if(window.innerHeight>900) size = 22
-                if(this.displayState==="edOnly") size = size*2;
-                this.zed.setSize(size);
+                this.zed.resize();
             },
             setEditKeys  : function(keys){
                 var newKey ="zemacs";
@@ -295,22 +291,10 @@ var app = new Vue({
                     else alert("Couldn't save "+sol.err)
                })
             },
-            togglePanes : function(){
-                if(this.displayState==='edOnly'){
-                    this.displayState="dataOnly";
-                    this.initEditor()
+            togglePanes : function(event){
+                this.displayState  = event.target.value;
+                this.initEditor();
                 return;
-                }
-                if(this.displayState==='dataOnly'){
-                   this.displayState="both"; 
-                   this.initEditor()
-                   return;
-                }
-                if(this.displayState==='both'){
-                    this.displayState="edOnly";
-                    this.initEditor()
-                    return;
-                }
             },
         }
     })
