@@ -21,12 +21,12 @@
 
       <div id="opt" class="topRow table" v-bind:class="fontSize"><span class="tr">
           <span class="td left">
-            <input type="text" v-model="currentThing.url" v-on:change="view.refresh(currentThing.url)">
-            <button v-on:click="view.refresh(currentThing.url)">go</button>
+            <input type="text" v-model="currentThing.url">
+            <button v-on:click="get(currentThing.url)">go</button>
           </span>
           <span class="td right">
             <label for="viewSelect">view: </label>
-            <select id="viewSelect" @change="fileDisplay.togglePanes($event)">
+            <select id="viewSelect" v-model="fileDisplay.displayState" @change="fileDisplay.togglePanes($event)">
               <option value="both">editor + data</option>
               <option value="edOnly">editor only</option>
               <option value="dataOnly">data only</option>
