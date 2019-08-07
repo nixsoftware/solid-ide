@@ -7,7 +7,15 @@
       local files 
       solside, zeditor
     -->
+
+    <!-- TODO - replace with CDN or other packaged version
+      custom repackaged rdflib used here for import / reuqire compat issues.
+    -->
+    <script src="rdflib.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/solid-file-client@0.5.1/dist/browser/solid-file-client.bundle.js"></script>
+
+    <script src="./nix-sdk.umd.js"></script>
+    <script type="module" src="./nix-solid.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.1/ace.js"></script>
@@ -31,6 +39,14 @@
               <option value="edOnly">editor only</option>
               <option value="dataOnly">data only</option>
             </select>
+            <span v-if="nixLoaded">
+              <button id="encryptSelection" v-on:click="fileDisplay.encryptSelection()">
+              encrypt
+              </button>
+              <button id="decryptSelection" v-on:click="fileDisplay.decryptSelection()">
+                decrypt
+              </button>
+            </span>
             <button id="saveEdits" v-on:click="fileDisplay.saveEdits()">
               save edits
             </button>
@@ -130,7 +146,7 @@
 
         <div class="table">
           <div class="tr">
-            <span class="td">logged in as</span>
+            <span v-if="loggedIn" class="td">logged in as</span>
             <span class="td left">
               {{webId}}
               <button v-on:click="setLogState()">{{logState}}</button>
@@ -161,6 +177,32 @@
             </span>
 
           </div></div>
+          <hr>
+          <div v-if="!nixLoaded">
+            <div class="tr"><span class="td">
+                Nix can be used to encrypt and decrypt data. It is not currently
+                enabled.
+            </span></div>
+            <div class="tr"><span class="td">
+                Please enter a passphrase to protect your local data and enable
+                Nix.
+            </span></div>
+            <div class="tr"><span class="td">
+                If you have used Nix from this webID before, please use the
+              same passphrase.
+            </span></div>
+            <div class="tr">
+              <span class="td"><input type="password" v-model="nixPass">
+                <button v-on:click="nixLoad(nixPass)">OK</button>
+              </span>
+            </div>
+            <div class="tr">
+              <span class="td" style="color:#f00">{{nixPassErr}}</span>
+            </div>
+          </div>
+          <div v-if="nixLoaded" class="tr">
+            <span class="td" style="color:#0d0">Nix is loaded.</span>
+          </div>
           <hr>
           <button v-on:click="storePrefs()">save preferences</button>
           <a type="button" target="_blank" href="mailto:dubzed@gmail.com">send feedback</a>

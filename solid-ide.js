@@ -5,6 +5,10 @@ const sol = new SolidHandler()      // from solid-ide-solidHandler.js
 const fc = SolidFileClient;         // from solid-file-client.bundle.js
 const auth = SolidAuthClient;         // from solid-file-client.bundle.js
 
+const JWERegex = /ey[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*/;
+let nixStore = null;
+let nixClient = null;
+
 var init = function(){
   app.getStoredPrefs()
   sol.get().then( results => {
@@ -152,6 +156,40 @@ var app = new Vue({
       }
       this.perms=status.permissions
     },
+    nixLoad : async function(pass) {
+      try {
+        nixStore = await nixSdk.stores.LocalEncryptedStore.fromPasswordKeyOrJWK({password: pass});
+      } catch(err) {
+        console.error('decrypting nix storage', err);
+        this.nixPassErr = 'Decrypting storage failed. Does your passphrase match? Please try again.';
+        return;
+      }
+      nixClient = await new nixSdk.Client({
+        defaultAPIKeyID: 'agAIFBw@api.nix.software',
+        defaultAPIKeySecret: '7vzuBreMxGV9ChiqZL7cRW3BVKpzI2skK0lJlh/8c0o=',
+        store: nixStore,
+      }).init();
+
+      try {
+        let short = (new URL(this.webId)).host;
+        let vaultIdentity = await nixClient.getIdentityByName(`${short}#v`);
+        if(!vaultIdentity) {
+          vaultIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeVault, name: `${short}#v`});
+          await nixClient.setDefaultIdentity(vaultIdentity);
+        }
+        let appIdentity   = await nixClient.getIdentityByName(`${short}#a`);
+        if(!appIdentity) {
+          appIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeApp, name: `${short}#a`});
+          await nixClient.setDefaultIdentity(appIdentity);
+        }
+      } catch(err) {
+        console.error("establishing nix identities", err);
+        this.nixPassErr = 'Loading or creating Nix identities failed.';
+        return;
+      }
+
+      this.nixLoaded = true;
+    },
     //
     // LOCAL STORAGE OF PREFERENCES
     //
@@ -243,6 +281,10 @@ var app = new Vue({
     homeUrl      : "",
     webId        : "",
     logState     : "login",
+    loggedIn     : false,
+    nixPass      : "",
+    nixPassErr   : "",
+    nixLoaded    : false,
   }, /* data */
 }) /* app */
 
@@ -250,7 +292,8 @@ var fileDisplay = new Vue({
   el  : '#fileDisplay',
   data : {
     file:{content:''},
-    displayState:localStorage.getItem('solDisplayState') || 'both'
+    displayState:localStorage.getItem('solDisplayState') || 'both',
+    contentPkg: null,
   },
   methods : {
     initEditor : function(){
@@ -296,6 +339,32 @@ var fileDisplay = new Vue({
         }
         else alert("Couldn't save "+sol.err)
       })
+    },
+    encryptSelection : async function() {
+      if(!this.contentPkg) {
+        this.contentPkg = await nixClient.newContentPackage(btoa(this.file.url));
+      }
+      let ed = this.zed.ed;
+      let selection = ed.getSelectedText();
+      if(!selection) {
+        alert("No content selected. Please select content to encrypt");
+        return;
+      }
+
+      let jwk = await this.contentPkg.createJWK();
+      let cipherText = await this.contentPkg.encrypt(jwk.kid, selection);
+      ed.session.replace(ed.selection.getRange(), cipherText);
+    },
+    decryptSelection : function() {
+      let ed = this.zed.ed;
+      let selection = ed.getSelectedText();
+      if(!selection) {
+        alert("No content selected. Please select content to decrypt");
+        return;
+      }
+      console.log("got", selection);
+      selection.replace(JWERegex);
+      ed.session.replace(ed.selection.getRange(), selectionUpdated);
     },
     togglePanes : function(event){
       this.displayState  = event.target.value;
