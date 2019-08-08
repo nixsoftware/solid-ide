@@ -5,9 +5,11 @@ const sol = new SolidHandler()      // from solid-ide-solidHandler.js
 const fc = SolidFileClient;         // from solid-file-client.bundle.js
 const auth = SolidAuthClient;         // from solid-file-client.bundle.js
 
-const JWERegex = /ey[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*/;
+const JWERegex = /(ey[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*)/g;
 let nixStore = null;
 let nixClient = null;
+let nixAppIdentity = null;
+let nixVaultIdentity = null;
 
 var init = function(){
   app.getStoredPrefs()
@@ -172,15 +174,15 @@ var app = new Vue({
 
       try {
         let short = (new URL(this.webId)).host;
-        let vaultIdentity = await nixClient.getIdentityByName(`${short}#v`);
-        if(!vaultIdentity) {
-          vaultIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeVault, name: `${short}#v`});
-          await nixClient.setDefaultIdentity(vaultIdentity);
+        nixVaultIdentity = await nixClient.getIdentityByName(`${short}#v`);
+        if(!nixVaultIdentity) {
+          nixVaultIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeVault, name: `${short}#v`});
+          await nixClient.setDefaultIdentity(nixVaultIdentity);
         }
-        let appIdentity   = await nixClient.getIdentityByName(`${short}#a`);
-        if(!appIdentity) {
-          appIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeApp, name: `${short}#a`});
-          await nixClient.setDefaultIdentity(appIdentity);
+        nixAppIdentity   = await nixClient.getIdentityByName(`${short}#a`);
+        if(!nixAppIdentity) {
+          nixAppIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeApp, name: `${short}#a`});
+          await nixClient.setDefaultIdentity(nixAppIdentity);
         }
       } catch(err) {
         console.error("establishing nix identities", err);
@@ -342,7 +344,7 @@ var fileDisplay = new Vue({
     },
     encryptSelection : async function() {
       if(!this.contentPkg) {
-        this.contentPkg = await nixClient.newContentPackage(btoa(this.file.url));
+        this.contentPkg = await nixClient.newContentPackage();
       }
       let ed = this.zed.ed;
       let selection = ed.getSelectedText();
@@ -353,17 +355,33 @@ var fileDisplay = new Vue({
 
       let jwk = await this.contentPkg.createJWK();
       let cipherText = await this.contentPkg.encrypt(jwk.kid, selection);
+      await nixAppIdentity.publishContentPackage(nixVaultIdentity.address, this.contentPkg);
       ed.session.replace(ed.selection.getRange(), cipherText);
     },
-    decryptSelection : function() {
+    decryptSelection : async function() {
       let ed = this.zed.ed;
       let selection = ed.getSelectedText();
       if(!selection) {
         alert("No content selected. Please select content to decrypt");
         return;
       }
-      console.log("got", selection);
-      selection.replace(JWERegex);
+      let parts = selection.split(JWERegex);
+      let promises = [];
+      for(var i = 1; i < parts.length; i += 2) {
+        promises.push(nixClient.decrypt(parts[i]));
+      }
+      let decrypted = [];
+      try {
+        decrypted = await Promise.all(promises);
+      } catch(err) {
+        console.log("decrypt failed", err);
+        alert("Data could not be decrypted. You may not have permission to access it.");
+        return;
+      }
+      for(var i = 1; i < parts.length; i += 2) {
+        parts[i] = decrypted[(i-1)/2];
+      }
+      let selectionUpdated = parts.join('');
       ed.session.replace(ed.selection.getRange(), selectionUpdated);
     },
     togglePanes : function(event){
