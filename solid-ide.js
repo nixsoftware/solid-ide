@@ -18,6 +18,109 @@ var init = function(){
   })
 }
 
+var fileDisplay = new Vue({
+  el  : '#fileDisplay',
+  data : {
+    file:{content:''},
+    displayState:localStorage.getItem('solDisplayState') || 'both',
+    contentPkg: null,
+  },
+  methods : {
+    initEditor : function(){
+      this.zed = new SolidIdeEditor('editor');
+      var keys  = app.editKeys  || "emacs"
+      var theme = app.editTheme || "dark theme"
+      this.setEditKeys(keys);
+      this.setEditTheme(theme);
+      this.zed.resize();
+    },
+    setEditKeys  : function(keys){
+      var newKey ="zemacs";
+      if(keys==='vim') newKey ="vim"
+      this.zed.setKeys(newKey)
+      this.keys = newKey;
+    },
+    setEditTheme  : function(theme){
+      var newTheme = "github"
+      if(theme.match("dark")){
+        newTheme = "monokai"
+      }
+      this.zed.setTheme(newTheme)
+      this.theme=newTheme
+    },
+    setContent : function(content){
+      this.initEditor()
+      this.file = app.currentThing;
+      this.file.content = content;
+      if(!this.file.type && this.file.url) 
+        this.file.type = sol.guessFileType(this.file.url)
+      this.zed.setModeFromType(this.file.type)
+      this.zed.setContents(content)
+      this.zed.ed.clearSelection() // remove blue overlay
+    },
+    saveEdits : function(){
+      sol.replace(
+        this.file.url,
+        this.zed.getContents()
+      ).then( success => {
+        if(success){
+          alert("Resource saved: " + this.file.url)
+          app.get(this.file.url)
+        }
+        else alert("Couldn't save "+sol.err)
+      })
+    },
+    encryptSelection : async function() {
+      if(!this.contentPkg) {
+        this.contentPkg = await nixClient.newContentPackage();
+      }
+      let ed = this.zed.ed;
+      let selection = ed.getSelectedText();
+      if(!selection) {
+        alert("No content selected. Please select content to encrypt");
+        return;
+      }
+
+      let jwk = await this.contentPkg.createJWK();
+      let cipherText = await this.contentPkg.encrypt(jwk.kid, selection);
+      await nixAppIdentity.publishContentPackage(nixVaultIdentity.address, this.contentPkg);
+      ed.session.replace(ed.selection.getRange(), cipherText);
+    },
+    decryptSelection : async function() {
+      let ed = this.zed.ed;
+      let selection = ed.getSelectedText();
+      if(!selection) {
+        alert("No content selected. Please select content to decrypt");
+        return;
+      }
+      let parts = selection.split(JWERegex);
+      let promises = [];
+      for(var i = 1; i < parts.length; i += 2) {
+        promises.push(nixClient.decrypt(parts[i]));
+      }
+      let decrypted = [];
+      try {
+        decrypted = await Promise.all(promises);
+      } catch(err) {
+        console.log("decrypt failed", err);
+        alert("Data could not be decrypted. You may not have permission to access it.");
+        return;
+      }
+      for(var i = 1; i < parts.length; i += 2) {
+        parts[i] = decrypted[(i-1)/2];
+      }
+      let selectionUpdated = parts.join('');
+      ed.session.replace(ed.selection.getRange(), selectionUpdated);
+    },
+    togglePanes : function(event){
+      this.displayState  = event.target.value;
+      localStorage.setItem("solDisplayState", this.displayState);
+      this.initEditor();
+      return;
+    },
+  }
+})
+
 var app = new Vue({
   el: '#app',
   methods : {
@@ -289,109 +392,6 @@ var app = new Vue({
     nixLoaded    : false,
   }, /* data */
 }) /* app */
-
-var fileDisplay = new Vue({
-  el  : '#fileDisplay',
-  data : {
-    file:{content:''},
-    displayState:localStorage.getItem('solDisplayState') || 'both',
-    contentPkg: null,
-  },
-  methods : {
-    initEditor : function(){
-      this.zed = new SolidIdeEditor('editor');
-      var keys  = app.editKeys  || "emacs"
-      var theme = app.editTheme || "dark theme"
-      this.setEditKeys(keys);
-      this.setEditTheme(theme);
-      this.zed.resize();
-    },
-    setEditKeys  : function(keys){
-      var newKey ="zemacs";
-      if(keys==='vim') newKey ="vim"
-      this.zed.setKeys(newKey)
-      this.keys = newKey;
-    },
-    setEditTheme  : function(theme){
-      var newTheme = "github"
-      if(theme.match("dark")){
-        newTheme = "monokai"
-      }
-      this.zed.setTheme(newTheme)
-      this.theme=newTheme
-    },
-    setContent : function(content){
-      this.initEditor()
-      this.file = app.currentThing;
-      this.file.content = content;
-      if(!this.file.type && this.file.url) 
-        this.file.type = sol.guessFileType(this.file.url)
-      this.zed.setModeFromType(this.file.type)
-      this.zed.setContents(content)
-      this.zed.ed.clearSelection() // remove blue overlay
-    },
-    saveEdits : function(){
-      sol.replace(
-        this.file.url,
-        this.zed.getContents()
-      ).then( success => {
-        if(success){
-          alert("Resource saved: " + this.file.url)
-          app.get(this.file.url)
-        }
-        else alert("Couldn't save "+sol.err)
-      })
-    },
-    encryptSelection : async function() {
-      if(!this.contentPkg) {
-        this.contentPkg = await nixClient.newContentPackage();
-      }
-      let ed = this.zed.ed;
-      let selection = ed.getSelectedText();
-      if(!selection) {
-        alert("No content selected. Please select content to encrypt");
-        return;
-      }
-
-      let jwk = await this.contentPkg.createJWK();
-      let cipherText = await this.contentPkg.encrypt(jwk.kid, selection);
-      await nixAppIdentity.publishContentPackage(nixVaultIdentity.address, this.contentPkg);
-      ed.session.replace(ed.selection.getRange(), cipherText);
-    },
-    decryptSelection : async function() {
-      let ed = this.zed.ed;
-      let selection = ed.getSelectedText();
-      if(!selection) {
-        alert("No content selected. Please select content to decrypt");
-        return;
-      }
-      let parts = selection.split(JWERegex);
-      let promises = [];
-      for(var i = 1; i < parts.length; i += 2) {
-        promises.push(nixClient.decrypt(parts[i]));
-      }
-      let decrypted = [];
-      try {
-        decrypted = await Promise.all(promises);
-      } catch(err) {
-        console.log("decrypt failed", err);
-        alert("Data could not be decrypted. You may not have permission to access it.");
-        return;
-      }
-      for(var i = 1; i < parts.length; i += 2) {
-        parts[i] = decrypted[(i-1)/2];
-      }
-      let selectionUpdated = parts.join('');
-      ed.session.replace(ed.selection.getRange(), selectionUpdated);
-    },
-    togglePanes : function(event){
-      this.displayState  = event.target.value;
-      localStorage.setItem("solDisplayState", this.displayState);
-      this.initEditor();
-      return;
-    },
-  }
-})
 
 var view = {
   currentForm : "",
