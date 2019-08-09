@@ -12,6 +12,67 @@ var init = function(){
   })
 }
 
+var fileDisplay = new Vue({
+  el  : '#fileDisplay',
+  data : {
+    file:{content:''},
+    displayState:localStorage.getItem('solDisplayState') || 'both'
+  },
+  methods : {
+    initEditor : function(){
+      this.zed = new SolidIdeEditor('editor');
+      var keys  = app.editKeys  || "emacs"
+      var theme = app.editTheme || "dark theme"
+      this.setEditKeys(keys);
+      this.setEditTheme(theme);
+      this.zed.resize();
+    },
+    setEditKeys  : function(keys){
+      var newKey ="zemacs";
+      if(keys==='vim') newKey ="vim"
+      this.zed.setKeys(newKey)
+      this.keys = newKey;
+    },
+    setEditTheme  : function(theme){
+      var newTheme = "github"
+      if(theme.match("dark")){
+        newTheme = "monokai"
+      }
+      this.zed.setTheme(newTheme)
+      this.theme=newTheme
+    },
+    setContent : function(content){
+      this.initEditor()
+      this.file = app.currentThing;
+      this.file.content = content;
+      if(!this.file.type && this.file.url) 
+        this.file.type = sol.guessFileType(this.file.url)
+      this.zed.setModeFromType(this.file.type)
+      this.zed.setContents(content)
+      this.zed.ed.clearSelection() // remove blue overlay
+    },
+    saveEdits : function(){
+      sol.replace(
+        this.file.url,
+        this.zed.getContents()
+      ).then( success => {
+        if(success){
+          alert("Resource saved: " + this.file.url)
+          app.get(this.file.url)
+        }
+        else alert("Couldn't save "+sol.err)
+      })
+    },
+    togglePanes : function(event){
+      this.displayState  = event.target.value;
+      localStorage.setItem("solDisplayState", this.displayState);
+      this.initEditor();
+      return;
+    },
+  }
+})
+
+
 var app = new Vue({
   el: '#app',
   methods : {
@@ -245,66 +306,6 @@ var app = new Vue({
     logState     : "login",
   }, /* data */
 }) /* app */
-
-var fileDisplay = new Vue({
-  el  : '#fileDisplay',
-  data : {
-    file:{content:''},
-    displayState:localStorage.getItem('solDisplayState') || 'both'
-  },
-  methods : {
-    initEditor : function(){
-      this.zed = new SolidIdeEditor('editor');
-      var keys  = app.editKeys  || "emacs"
-      var theme = app.editTheme || "dark theme"
-      this.setEditKeys(keys);
-      this.setEditTheme(theme);
-      this.zed.resize();
-    },
-    setEditKeys  : function(keys){
-      var newKey ="zemacs";
-      if(keys==='vim') newKey ="vim"
-      this.zed.setKeys(newKey)
-      this.keys = newKey;
-    },
-    setEditTheme  : function(theme){
-      var newTheme = "github"
-      if(theme.match("dark")){
-        newTheme = "monokai"
-      }
-      this.zed.setTheme(newTheme)
-      this.theme=newTheme
-    },
-    setContent : function(content){
-      this.initEditor()
-      this.file = app.currentThing;
-      this.file.content = content;
-      if(!this.file.type && this.file.url) 
-        this.file.type = sol.guessFileType(this.file.url)
-      this.zed.setModeFromType(this.file.type)
-      this.zed.setContents(content)
-      this.zed.ed.clearSelection() // remove blue overlay
-    },
-    saveEdits : function(){
-      sol.replace(
-        this.file.url,
-        this.zed.getContents()
-      ).then( success => {
-        if(success){
-          alert("Resource saved: " + this.file.url)
-          app.get(this.file.url)
-        }
-        else alert("Couldn't save "+sol.err)
-      })
-    },
-    togglePanes : function(event){
-      this.displayState  = event.target.value;
-      localStorage.setItem("solDisplayState", this.displayState);
-      this.initEditor();
-      return;
-    },
-  }
-})
 
 var view = {
   currentForm : "",
