@@ -178,18 +178,11 @@
           </div></div>
           <hr>
           <div v-if="!nixLoaded">
-            <div class="tr"><span class="td">
-                Nix can be used to encrypt and decrypt data. It is not currently
-                enabled.
-            </span></div>
-            <div class="tr"><span class="td">
-                Please enter a passphrase to protect your local data and enable
-                Nix.
-            </span></div>
-            <div class="tr"><span class="td">
-                If you have used Nix from this webID before, please use the
-              same passphrase.
-            </span></div>
+            <div> Nix can be used to encrypt and decrypt data. It is not
+              currently enabled.  </div><div> Please enter a passphrase to protect your
+              local data and enable Nix. If you have used Nix from this webID
+              before, please use the same passphrase.
+            </div>
             <div class="tr">
               <span class="td"><input type="password" v-model="nixPass">
                 <button v-on:click="nixLoad(nixPass)">OK</button>

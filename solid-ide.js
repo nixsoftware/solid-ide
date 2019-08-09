@@ -5,11 +5,8 @@ const sol = new SolidHandler()      // from solid-ide-solidHandler.js
 const fc = SolidFileClient;         // from solid-file-client.bundle.js
 const auth = SolidAuthClient;         // from solid-file-client.bundle.js
 
-const JWERegex = /(ey[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*\.[0-9A-Za-z_\-]*)/g;
 let nixStore = null;
 let nixClient = null;
-let nixAppIdentity = null;
-let nixVaultIdentity = null;
 
 var init = function(){
   app.getStoredPrefs()
@@ -22,8 +19,7 @@ var fileDisplay = new Vue({
   el  : '#fileDisplay',
   data : {
     file:{content:''},
-    displayState:localStorage.getItem('solDisplayState') || 'both',
-    contentPkg: null,
+    displayState:localStorage.getItem('solDisplayState') || 'both'
   },
   methods : {
     initEditor : function(){
@@ -71,46 +67,28 @@ var fileDisplay = new Vue({
       })
     },
     encryptSelection : async function() {
-      if(!this.contentPkg) {
-        this.contentPkg = await nixClient.newContentPackage();
-      }
       let ed = this.zed.ed;
       let selection = ed.getSelectedText();
       if(!selection) {
-        alert("No content selected. Please select content to encrypt");
-        return;
+        return alert("No content selected. Please select content to encrypt");
       }
 
-      let jwk = await this.contentPkg.createJWK();
-      let cipherText = await this.contentPkg.encrypt(jwk.kid, selection);
-      await nixAppIdentity.publishContentPackage(nixVaultIdentity.address, this.contentPkg);
+      let cipherText = await nixClient.encrypt(selection);
       ed.session.replace(ed.selection.getRange(), cipherText);
     },
     decryptSelection : async function() {
       let ed = this.zed.ed;
       let selection = ed.getSelectedText();
       if(!selection) {
-        alert("No content selected. Please select content to decrypt");
-        return;
+        return alert("No content selected. Please select content to decrypt");
       }
-      let parts = selection.split(JWERegex);
-      let promises = [];
-      for(var i = 1; i < parts.length; i += 2) {
-        promises.push(nixClient.decrypt(parts[i]));
-      }
-      let decrypted = [];
       try {
-        decrypted = await Promise.all(promises);
+        selection = await nixClient.decryptAll(selection);
       } catch(err) {
         console.log("decrypt failed", err);
-        alert("Data could not be decrypted. You may not have permission to access it.");
-        return;
+        return alert("Data could not be decrypted. You may not have permission to access it.");
       }
-      for(var i = 1; i < parts.length; i += 2) {
-        parts[i] = decrypted[(i-1)/2];
-      }
-      let selectionUpdated = parts.join('');
-      ed.session.replace(ed.selection.getRange(), selectionUpdated);
+      ed.session.replace(ed.selection.getRange(), selection);
     },
     togglePanes : function(event){
       this.displayState  = event.target.value;
@@ -265,9 +243,8 @@ var app = new Vue({
       try {
         nixStore = await nixSdk.stores.LocalEncryptedStore.fromPasswordKeyOrJWK({password: pass});
       } catch(err) {
-        console.error('decrypting nix storage', err);
         this.nixPassErr = 'Decrypting storage failed. Does your passphrase match? Please try again.';
-        return;
+        return console.error('decrypting nix storage', err);
       }
       nixClient = await new nixSdk.Client({
         defaultAPIKeyID: 'agAIFBw@api.nix.software',
@@ -277,20 +254,11 @@ var app = new Vue({
 
       try {
         let short = (new URL(this.webId)).host;
-        nixVaultIdentity = await nixClient.getIdentityByName(`${short}#v`);
-        if(!nixVaultIdentity) {
-          nixVaultIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeVault, name: `${short}#v`});
-          await nixClient.setDefaultIdentity(nixVaultIdentity);
-        }
-        nixAppIdentity   = await nixClient.getIdentityByName(`${short}#a`);
-        if(!nixAppIdentity) {
-          nixAppIdentity = await nixClient.newIdentity({type: nixSdk.constants.IdentityTypeApp, name: `${short}#a`});
-          await nixClient.setDefaultIdentity(nixAppIdentity);
-        }
+        await nixClient.getOrCreateIdentityByName(`${short}#v`, nixSdk.constants.IdentityTypeVault);
+        await nixClient.getOrCreateIdentityByName(`${short}#a`, nixSdk.constants.IdentityTypeApp);
       } catch(err) {
-        console.error("establishing nix identities", err);
         this.nixPassErr = 'Loading or creating Nix identities failed.';
-        return;
+        return console.error("establishing nix identities", err);
       }
 
       this.nixLoaded = true;
