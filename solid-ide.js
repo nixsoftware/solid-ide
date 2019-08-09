@@ -241,7 +241,7 @@ var app = new Vue({
     },
     nixLoad : async function(pass) {
       try {
-        nixStore = await nixSdk.stores.LocalEncryptedStore.fromPasswordKeyOrJWK({password: pass});
+        nixStore = await PodEncryptedStore.fromPasswordKeyOrJWK({password: pass, webID: this.webId});
       } catch(err) {
         this.nixPassErr = 'Decrypting storage failed. Does your passphrase match? Please try again.';
         return console.error('decrypting nix storage', err);
