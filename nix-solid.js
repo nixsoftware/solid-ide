@@ -5,6 +5,13 @@ const Identity = nixSdk.Identity;
 
 const _fc = SolidFileClient;         // from solid-file-client.bundle.js
 
+
+// TODOs
+// - PodEncryptedStore:
+//   - validate consistency of unsigned data against signed data
+//   - swap formats to something LD-based where possible
+//   - publish public identity + default identity information to public / webId profile
+
 // Assuming we're starting with something like:
 // https://robmccoll.solid.community/profile/card#me
 // and that /public exists / is the right place
