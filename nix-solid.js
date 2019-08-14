@@ -5,6 +5,11 @@ const Identity = nixSdk.Identity;
 
 const _fc = SolidFileClient;         // from solid-file-client.bundle.js
 
+const ContentType = "Content-Type";
+const TurtleMIMEType = "text/turtle";
+
+// TODO - develop schema
+const NixNS = $rdf.Namespace("https://www.nix.software/rdf-schema/nix_v1");
 
 // TODOs
 // - PodEncryptedStore:
@@ -161,6 +166,11 @@ class PodEncryptedStore {
     await _fc.updateFile(this.privateRoot + "store/config/" + btoa(key) + ".json", JSON.stringify({
       JWE: (await JWE.encryptDirectAES256GCM(this.key, JSON.stringify(val), key)).toCompact(),
     }))
+
+    if(key.startsWith("defaultIdentities.")) {
+      let identity = await this.getIdentityByAddress(val);
+      await this.setDefaultIdentityProfile(identity);
+    }
   }
 
   async loadConfig(key) {
@@ -172,5 +182,38 @@ class PodEncryptedStore {
     }
     let json = await JWE.fromCompact(obj.JWE).decryptDirectAES256GCM(this.key);
     return JSON.parse(json);
+  }
+
+  async setDefaultIdentityProfile(identity) {
+    let body = await _fc.fetch(this.webID, TurtleMIMEType);
+    let graph = $rdf.graph();
+    $rdf.parse(body, graph, this.webID, TurtleMIMEType);
+    let identities = graph.each(this.webID, NixNS('primaryIdentities'));
+    let foundIdent = null;
+    for(let i = 0; i < identities.length; i++) {
+      let type = graph.any(identities[i], NixNS('identityType'));
+      if(type.value !== identity.type) {
+        continue;
+      }
+      foundIdent = identities[i];
+      graph.remove(foundIdent);
+      break;
+    }
+    if(!foundIdent) {
+      foundIdent = new $rdf.BlankNode();
+    }
+    graph.add(foundIdent, NixNS("identityType"), identity.type, this.webID);
+    graph.add(foundIdent, NixNS("address"), identity.address, this.webID);
+    graph.add(foundIdent, NixNS("pubSigJWK"), JSON.stringify(await identity.getSigPubJWK()), this.webID);
+    graph.add(foundIdent, NixNS("pubEncJWK"), JSON.stringify(await identity.getEncPubJWK()), this.webID);
+    graph.add(this.webID, NixNS("primaryIdentities"), foundIdent, this.webID);
+    body = await $rdf.serialize(undefined, graph, this.webID, TurtleMIMEType);
+    return await _fc.fetch(this.webID, {
+      method: 'PUT',
+      headers: {
+        [ContentType]: TurtleMIMEType,
+      },
+      body: body,
+    });
   }
 }
