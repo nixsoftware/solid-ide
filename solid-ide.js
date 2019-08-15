@@ -240,9 +240,11 @@ var app = new Vue({
       this.perms=status.permissions
     },
     nixLoad : async function(pass) {
+      this.nixState = 'loading';
       try {
         nixStore = await PodEncryptedStore.fromPasswordKeyOrJWK({password: pass, webID: this.webId});
       } catch(err) {
+        this.nixState = '';
         this.nixPassErr = 'Decrypting storage failed. Does your passphrase match? Please try again.';
         return console.error('decrypting nix storage', err);
       }
@@ -258,11 +260,12 @@ var app = new Vue({
         await nixClient.getOrCreateIdentityByName(`${short}#v`, nixSdk.constants.IdentityTypeVault);
         await nixClient.getOrCreateIdentityByName(`${short}#a`, nixSdk.constants.IdentityTypeApp);
       } catch(err) {
+        this.nixState = '';
         this.nixPassErr = 'Loading or creating Nix identities failed.';
         return console.error("establishing nix identities", err);
       }
 
-      this.nixLoaded = true;
+      this.nixState = 'loaded';
     },
     //
     // LOCAL STORAGE OF PREFERENCES
@@ -358,7 +361,7 @@ var app = new Vue({
     loggedIn     : false,
     nixPass      : "",
     nixPassErr   : "",
-    nixLoaded    : false,
+    nixState     : '',
   }, /* data */
 }) /* app */
 

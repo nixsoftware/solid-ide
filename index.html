@@ -39,7 +39,7 @@
               <option value="edOnly">editor only</option>
               <option value="dataOnly">data only</option>
             </select>
-            <span v-if="nixLoaded">
+            <span v-if="nixState === 'loaded'">
               <button id="encryptSelection" v-on:click="fileDisplay.encryptSelection()">
               encrypt
               </button>
@@ -179,7 +179,7 @@
           </div></div>
           <hr>
             <div> Nix can be used to encrypt and decrypt data. </div>
-          <div v-if="!nixLoaded">
+          <div v-if="nixState === ''">
             <div v-if="!loggedIn">
               <div>Please log in with your webID above before enabling Nix. </div>
             </div>
@@ -199,8 +199,11 @@
               </div>
             </div>
           </div>
-          <div v-if="nixLoaded" class="tr">
-            <span class="td" style="color:#0d0">Nix is loaded.</span>
+          <div v-if="nixState === 'loading'" class="tr">
+            <span class="td" style="color:#00a">Nix is loading...</span>
+          </div>
+          <div v-if="nixState === 'loaded'" class="tr">
+            <span class="td" style="color:#0a0">Nix is loaded.</span>
           </div>
           <hr>
           <button v-on:click="storePrefs()">save preferences</button>
