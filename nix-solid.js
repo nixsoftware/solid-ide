@@ -1,7 +1,10 @@
 // extending nix to make use of solid
+
 const JWE = nixSdk.jose.JWE;
 const JWK = nixSdk.jose.JWK;
 const Identity = nixSdk.Identity;
+const VaultOps = nixSdk.constants.VaultOps;
+const kidToCanonUserHostPath = nixSdk.util.kidToCanonUserHostPath;
 
 const _fc = SolidFileClient;         // from solid-file-client.bundle.js
 
@@ -13,6 +16,7 @@ const NixNS = $rdf.Namespace("https://www.nix.software/rdf-schema/nix_v1");
 
 // TODOs
 // - PodEncryptedStore:
+//   - Add URIs to authenticated data to prevent attacks by moving / copying JWEs
 //   - validate consistency of unsigned data against signed data
 //   - swap formats to something LD-based where possible
 //   - publish public identity + default identity information to public / webId profile
@@ -215,5 +219,206 @@ class PodEncryptedStore {
       },
       body: body,
     });
+  }
+}
+
+class PodEncryptedVault {
+  constructor({
+    webID       = null,
+    publicRoot  = null,
+    privateRoot = null,
+  } = {}) {
+    this.webID       = webID;
+    this.publicRoot  = publicRoot  || webIDToPublicRoot(webID);
+    this.privateRoot = privateRoot || webIDToPrivateRoot(webID);
+    if(!this.webID || !this.publicRoot || !this.privateRoot) {
+      throw("webID is required. publicRoot and privateRoot can be derived, but must have values");
+    }
+  }
+
+  async forIdentity({
+    identity = null,
+
+    /* optional */
+    dbName = null,
+  } = {}) {
+    let vault = new PodEncryptedVault({
+      webID: this.webID,
+      publicRoot: this.publicRoot,
+      privateRoot: this.privateRoot,
+    });
+
+    vault.identity = identity;
+    vault.vaultBase = vault.privateRoot + "vaults/" + identity.address + "/";
+    // TODO set ourselves as the identity comm's key store
+
+    let intermediateKey = '';
+
+    try {
+      intermediateKey = await _fc.fetch(vault.vaultBase + "intermediate.txt")
+
+    } catch(err) {
+      intermediateKey = (await JWE.encryptECDHESP256(
+        vault.identity.comms.encPubKey, JSON.stringify(await JWK.randomAESGCM()), "intermediateKey"
+      )).toCompact();
+
+      await _fc.createFolder(vault.privateRoot);
+      await _fc.createFolder(vault.privateRoot + "vaults/");
+      await _fc.createFolder(vault.vaultBase);
+
+      await Promise.all(["config/", "identities/", "globalperms/", "contentpkgperms/",
+        "contentpkgs/", "msgids/"].map((folder) => _fc.createFolder(vault.vaultBase + folder)));
+      await Promise.all(["config/", "identities/byaddress/", "globalperms/byperm/",
+        "contentpkgperms/bykid/", "contentpkgs/bykid/", "msgids/"].map((folder) => _fc.createFolder(vault.vaultBase + folder)));
+
+      await _fc.createFile(vault.vaultBase + "intermediate.txt", intermediateKey)
+
+    } finally {
+      try {
+        vault.key = await JWK.toAESGCMKey(JSON.parse(await JWE.fromCompact(intermediateKey).
+            decryptECDHEP256(vault.identity.comms.encPrivKey)));
+      } catch(e) {
+        throw "given key / password / jwk could not be used to unlock the store: "  + e;
+      }
+    }
+
+    console.log("vault storage unlocked for ", identity);
+    vault.latestTS = await vault.getConfig("latestTS");
+    vault.writeLatestTS = null;
+
+    return vault;
+  }
+
+  async _getURIOrDefault(uri, def) {
+    let obj = null;
+    try {
+      obj = JSON.parse(await _fc.fetch(uri));
+    } catch(err) {
+      return def;
+    }
+    let jwe = await JWE.fromCompact(obj.JWE);
+    let json = await jwe.decryptDirectAES256GCM(this.key);
+    let kid = jwe.protectedObj.kid;
+    if(kid !== uri) {
+      throw("data may have been modified - signed URI didn't match " + kid + " " + uri);
+    }
+    return JSON.parse(json);
+  }
+
+  async _putURI(uri, value) {
+    return await _fc.updateFile(uri, JSON.stringify({
+      JWE: (await JWE.encryptDirectAES256GCM(this.key, JSON.stringify(value), uri)).toCompact(),
+    }))
+  }
+
+  async _deleteURI(uri) {
+    return await _fc.deleteFile(uri);
+  }
+
+  async setConfig(key, value) {
+    return await this._putURI(this.vaultBase + "config/" + btoa(key) + ".json", value);
+  }
+
+  async getConfig(key) {
+    return await this._getURIOrDefault(this.vaultBase + "config/" + btoa(key) + ".json", null);
+  }
+
+  async setAllowGlobal(addr, op) {
+    const uri = this.vaultBase + "globalperms/byperm/" + op + ".json";
+    let obj = await this._getURIOrDefault(uri, {});
+    [addr] = kidToCanonUserHostPath(addr);
+    obj[addr] = {allow: true};
+    return await this._putURI(uri, obj);
+  }
+
+  async isAllowedGlobal(addr, op) {
+    console.log("isAllowedGlobal", addr, op);
+    let obj = await this._getURIOrDefault(this.vaultBase + "globalperms/byperm/" + op + ".json", {});
+    [addr] = kidToCanonUserHostPath(addr);
+    return obj[addr] ? obj[addr].allow : false;
+  }
+
+  async setAllowContentPackage(addr, op, kid) {
+    const uri = this.vaultBase + "contentpkgperms/bykid/" + btoa(kid) + ".json";
+    let obj = await this._getURIOrDefault(uri, {});
+    [addr] = kidToCanonUserHostPath(addr);
+    let canOp = obj[op] || {};
+    canOp[addr] = {allow: true};
+    obj[op] = canOp;
+    return await this._putURI(uri, obj);
+  }
+
+  async isAllowedContentPackage(addr, op, kid, noGlobal) {
+    console.log("isAllowedContentPackage", addr, op, kid, noGlobal);
+    if ((!noGlobal) && (await this.isAllowedGlobal(addr, op))) {
+      return true;
+    }
+
+    [addr] = kidToCanonUserHostPath(addr);
+    let obj = await this._getURIOrDefault(this.vaultBase + "contentpkgperms/bykid/" + btoa(kid) + ".json", {});
+    let canOp = obj[op] || {};
+    return canOp[addr] ? canOp[addr].allow : false;
+  }
+
+  async gatherContentPackagePerms(kid) {
+    let obj = await this._getURIOrDefault(this.vaultBase + "contentpkgperms/bykid/" + btoa(kid) + ".json", {});
+    let perms = {};
+    for(var op in Object.values(VaultOps)) {
+      if(obj[op]) {
+        perms[op] = Object.keys(obj[op]);
+      }
+    }
+    return perms;
+  }
+
+  async processedBefore(ts, msgID) {
+    let cut = ts.length - 9;
+    let secs = ts.slice(0, cut);
+    this.latestTS = (Number(secs) - (2 * 60) | 0) + ts.slice(cut);
+
+    if(await this._getURIOrDefault(this.vaultBase + "msgids/" + btoa(msgID) + ".json", false)) {
+      return true;
+    }
+    await this._putURI(this.vaultBase + "msgids/" + btoa(msgID) + ".json", true);
+
+    if(!this.writeLatestTS) {
+      this.writeLatestTS = setTimeout(() => {
+        this.setConfig("latestTS", this.latestTS).then(() => {});
+        this.writeLatestTS = null;
+      }, 1000);
+    }
+    return false;
+  }
+
+  getLatestTS() {
+    return this.latestTS
+  }
+
+  async setContentPackage(kid, pkg) {
+    return await this._putURI(this.vaultBase + "contentpkgs/bykid/" + btoa(kid) + ".json", pkg);
+  }
+
+  async getContentPackage(kid) {
+    return await this._getURIOrDefault(this.vaultBase + "contentpkgs/bykid/" + btoa(kid) + ".json", pkg, null);
+  }
+
+  async deleteContentPackage(kid, pkg) {
+    return await this._deleteURI(this.vaultBase + "contentpkgs/bykid/" + btoa(kid) + ".json");
+  }
+
+  async whichIdentitiesCan(op, kid) {
+    var addresses = {};
+
+    let globalPerms = await this._getURIOrDefault(this.vaultBase + "globalperms/byperm/" + op + ".json", {});
+    Object.keys(globalPerms).map((addr) => addresses[addr] = true);
+
+    let contentPkgPerms = await this._getURIOrDefault(this.vaultBase + "contentpkgperms/bykid/" + btoa(kid) + ".json", {});
+    let canOp = contentPkgPerms[op] || {};
+    Object.keys(canOp).map((addr) => addresses[addr] = true);
+    return Object.keys(addresses);
+  }
+
+  async deleteContentPackagePerms(kid, pkg) {
+    return await this._deleteURI(this.vaultBase + "contentpkgperms/bykid/" + btoa(kid) + ".json");
   }
 }

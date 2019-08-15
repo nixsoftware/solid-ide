@@ -250,6 +250,7 @@ var app = new Vue({
         defaultAPIKeyID: 'agAIFBw@api.nix.software',
         defaultAPIKeySecret: '7vzuBreMxGV9ChiqZL7cRW3BVKpzI2skK0lJlh/8c0o=',
         store: nixStore,
+        vaultStore: new PodEncryptedVault({webID: this.webId}),
       }).init();
 
       try {
