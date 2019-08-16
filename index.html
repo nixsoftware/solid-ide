@@ -211,6 +211,21 @@
 
       </div><!-- optionsManager -->
 
+      <!-- Encrypt permissions dialog -->
+      <div v-if="fileDisplay.showPermissions" style="width: 100vw;height:100vh;z-index: 10;position: fixed;top: 0;left:0;margin-left:0;margin-top:0;background: rgba(0, 0, 0, 0.75);">
+        <div style="width: 90vw;height:90vh;margin-left: 5vw;margin-top: 5vh;background: #fff;border: 1px solid #000;">
+          <div style="padding: 5%; width:95%; height:95%">
+            <h1>Permissions</h1>
+            <p>Enter WebIDs that should be allowed to read this encrypted content (separated with whitespace and/or commas).</p>
+            <textarea v-model="fileDisplay.canRead" style="width: 90%"></textarea>
+            <div style="margin=top:1em">
+              <button v-on:click="fileDisplay.completeEncryptSelection()">Encrypt</button>
+              <button v-on:click="fileDisplay.showPermissions=false">Cancel</button>
+            </div>
+          </div>
+        </div>
+    </div>
+
     </div><!-- app -->
 
     <!--

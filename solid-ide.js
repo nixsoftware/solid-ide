@@ -19,7 +19,10 @@ var fileDisplay = new Vue({
   el  : '#fileDisplay',
   data : {
     file:{content:''},
-    displayState:localStorage.getItem('solDisplayState') || 'both'
+    displayState: localStorage.getItem('solDisplayState') || 'both',
+    showPermissions: false,
+    canRead: '',
+    selection: null,
   },
   methods : {
     initEditor : function(){
@@ -68,12 +71,19 @@ var fileDisplay = new Vue({
     },
     encryptSelection : async function() {
       let ed = this.zed.ed;
-      let selection = ed.getSelectedText();
-      if(!selection) {
+      this.selection = ed.getSelectedText();
+      if(!this.selection) {
         return alert("No content selected. Please select content to encrypt");
       }
-
-      let cipherText = await nixClient.encrypt(selection);
+      this.showPermissions = true;
+    },
+    completeEncryptSelection : async function() {
+      this.showPermissions = false;
+      let ed = this.zed.ed;
+      let readers = await Promise.all(this.canRead.split(/[\s,]+/).map(async (reader) => {
+        return (await getDefaultIdentity(reader, "app")).address
+      }));
+      let cipherText = await nixClient.encrypt(this.selection, {[nixSdk.constants.VaultOps.ContentPkgRead]: readers});
       ed.session.replace(ed.selection.getRange(), cipherText);
     },
     decryptSelection : async function() {

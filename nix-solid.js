@@ -40,6 +40,33 @@ function webIDToPrivateRoot(webID) {
   return url.toString();
 }
 
+async function getDefaultIdentity(webID, preferredType) {
+  let body = await _fc.fetch(webID);
+  let graph = $rdf.graph();
+  $rdf.parse(body, graph, webID, TurtleMIMEType);
+  let webIDNN = new $rdf.NamedNode(webID);
+  let identities = graph.each(webIDNN, NixNS('primaryIdentities'));
+  let foundIdent = null;
+  for(let i = 0; i < identities.length; i++) {
+    let type = graph.any(identities[i], NixNS('identityType'));
+    if(preferredType && (type.value !== preferredType)) {
+      continue;
+    }
+    foundIdent = identities[i];
+    break;
+  }
+  if(!foundIdent) {
+    return null;
+  }
+
+  return {
+    type:      graph.any(foundIdent, NixNS("identityType")).value,
+    address:   graph.any(foundIdent, NixNS("address")).value,
+    pubSigJWK: JSON.parse(graph.any(foundIdent, NixNS("pubSigJWK")).value),
+    pubEncJWK: JSON.parse(graph.any(foundIdent, NixNS("pubEncJWK")).value),
+  };
+}
+
 class PodEncryptedStore {
   /* SHOULD NOT BE USED DIRECTLY - call fromPasswordKeyOrJWK() */
   constructor() {}
@@ -283,7 +310,6 @@ class PodEncryptedVault {
       }
     }
 
-    console.log("vault storage unlocked for ", identity);
     vault.latestTS = await vault.getConfig("latestTS");
     vault.writeLatestTS = null;
 
@@ -333,7 +359,6 @@ class PodEncryptedVault {
   }
 
   async isAllowedGlobal(addr, op) {
-    console.log("isAllowedGlobal", addr, op);
     let obj = await this._getURIOrDefault(this.vaultBase + "globalperms/byperm/" + op + ".json", {});
     [addr] = kidToCanonUserHostPath(addr);
     return obj[addr] ? obj[addr].allow : false;
@@ -350,7 +375,6 @@ class PodEncryptedVault {
   }
 
   async isAllowedContentPackage(addr, op, kid, noGlobal) {
-    console.log("isAllowedContentPackage", addr, op, kid, noGlobal);
     if ((!noGlobal) && (await this.isAllowedGlobal(addr, op))) {
       return true;
     }
