@@ -5,6 +5,9 @@ const sol = new SolidHandler()      // from solid-ide-solidHandler.js
 const fc = SolidFileClient;         // from solid-file-client.bundle.js
 const auth = SolidAuthClient;         // from solid-file-client.bundle.js
 
+let nixStore = null;
+let nixClient = null;
+
 var init = function(){
   app.getStoredPrefs()
   sol.get().then( results => {
@@ -16,7 +19,10 @@ var fileDisplay = new Vue({
   el  : '#fileDisplay',
   data : {
     file:{content:''},
-    displayState:localStorage.getItem('solDisplayState') || 'both'
+    displayState: localStorage.getItem('solDisplayState') || 'both',
+    showPermissions: false,
+    canRead: '',
+    selection: null,
   },
   methods : {
     initEditor : function(){
@@ -63,6 +69,37 @@ var fileDisplay = new Vue({
         else alert("Couldn't save "+sol.err)
       })
     },
+    encryptSelection : async function() {
+      let ed = this.zed.ed;
+      this.selection = ed.getSelectedText();
+      if(!this.selection) {
+        return alert("No content selected. Please select content to encrypt");
+      }
+      this.showPermissions = true;
+    },
+    completeEncryptSelection : async function() {
+      this.showPermissions = false;
+      let ed = this.zed.ed;
+      let readers = await Promise.all(this.canRead.split(/[\s,]+/).map(async (reader) => {
+        return (await getDefaultIdentity(reader, "app")).address
+      }));
+      let cipherText = await nixClient.encrypt(this.selection, {[nixSdk.constants.VaultOps.ContentPkgRead]: readers});
+      ed.session.replace(ed.selection.getRange(), cipherText);
+    },
+    decryptSelection : async function() {
+      let ed = this.zed.ed;
+      let selection = ed.getSelectedText();
+      if(!selection) {
+        return alert("No content selected. Please select content to decrypt");
+      }
+      try {
+        selection = await nixClient.decryptAll(selection);
+      } catch(err) {
+        console.log("decrypt failed", err);
+        return alert("Data could not be decrypted. You may not have permission to access it.");
+      }
+      ed.session.replace(ed.selection.getRange(), selection);
+    },
     togglePanes : function(event){
       this.displayState  = event.target.value;
       localStorage.setItem("solDisplayState", this.displayState);
@@ -71,7 +108,6 @@ var fileDisplay = new Vue({
     },
   }
 })
-
 
 var app = new Vue({
   el: '#app',
@@ -213,6 +249,34 @@ var app = new Vue({
       }
       this.perms=status.permissions
     },
+    nixLoad : async function(pass) {
+      this.nixState = 'loading';
+      try {
+        nixStore = await PodEncryptedStore.fromPasswordKeyOrJWK({password: pass, webID: this.webId});
+      } catch(err) {
+        this.nixState = '';
+        this.nixPassErr = 'Decrypting storage failed. Does your passphrase match? Please try again.';
+        return console.error('decrypting nix storage', err);
+      }
+      nixClient = await new nixSdk.Client({
+        defaultAPIKeyID: 'agAIFBw@api.nix.software',
+        defaultAPIKeySecret: '7vzuBreMxGV9ChiqZL7cRW3BVKpzI2skK0lJlh/8c0o=',
+        store: nixStore,
+        vaultStore: new PodEncryptedVault({webID: this.webId}),
+      }).init();
+
+      try {
+        let short = (new URL(this.webId)).host;
+        await nixClient.getOrCreateIdentityByName(`${short}#v`, nixSdk.constants.IdentityTypeVault);
+        await nixClient.getOrCreateIdentityByName(`${short}#a`, nixSdk.constants.IdentityTypeApp);
+      } catch(err) {
+        this.nixState = '';
+        this.nixPassErr = 'Loading or creating Nix identities failed.';
+        return console.error("establishing nix identities", err);
+      }
+
+      this.nixState = 'loaded';
+    },
     //
     // LOCAL STORAGE OF PREFERENCES
     //
@@ -304,6 +368,10 @@ var app = new Vue({
     homeUrl      : "",
     webId        : "",
     logState     : "login",
+    loggedIn     : false,
+    nixPass      : "",
+    nixPassErr   : "",
+    nixState     : '',
   }, /* data */
 }) /* app */
 
