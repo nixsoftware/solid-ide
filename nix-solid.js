@@ -12,7 +12,7 @@ const ContentType = "Content-Type";
 const TurtleMIMEType = "text/turtle";
 
 // TODO - develop schema
-const NixNS = $rdf.Namespace("https://www.nix.software/rdf-schema/nix_v1");
+const NixNS = $rdf.Namespace("https://www.nix.software/rdf-schema/nix_v1#");
 
 // TODOs
 // - PodEncryptedStore:
@@ -192,7 +192,8 @@ class PodEncryptedStore {
     let body = await _fc.fetch(this.webID, TurtleMIMEType);
     let graph = $rdf.graph();
     $rdf.parse(body, graph, this.webID, TurtleMIMEType);
-    let identities = graph.each(this.webID, NixNS('primaryIdentities'));
+    let webIDNN = new $rdf.NamedNode(this.webID);
+    let identities = graph.each(webIDNN, NixNS('primaryIdentities'));
     let foundIdent = null;
     for(let i = 0; i < identities.length; i++) {
       let type = graph.any(identities[i], NixNS('identityType'));
@@ -200,17 +201,17 @@ class PodEncryptedStore {
         continue;
       }
       foundIdent = identities[i];
-      graph.remove(foundIdent);
+      graph.removeMany(foundIdent);
       break;
     }
     if(!foundIdent) {
       foundIdent = new $rdf.BlankNode();
+      graph.add(webIDNN, NixNS("primaryIdentities"), foundIdent, this.webID);
     }
     graph.add(foundIdent, NixNS("identityType"), identity.type, this.webID);
     graph.add(foundIdent, NixNS("address"), identity.address, this.webID);
     graph.add(foundIdent, NixNS("pubSigJWK"), JSON.stringify(await identity.getSigPubJWK()), this.webID);
     graph.add(foundIdent, NixNS("pubEncJWK"), JSON.stringify(await identity.getEncPubJWK()), this.webID);
-    graph.add(this.webID, NixNS("primaryIdentities"), foundIdent, this.webID);
     body = await $rdf.serialize(undefined, graph, this.webID, TurtleMIMEType);
     return await _fc.fetch(this.webID, {
       method: 'PUT',
